@@ -1,0 +1,357 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local Settings = {
+	Enabled = false,
+	ShowHighlights = true,
+	RequireVisibility = true,
+	IgnoreSameTeam = true,
+
+	FOVRadius = 180,
+	MinFOV = 50,
+	MaxFOV = 450,
+	FOVStep = 10,
+
+	MaxDistance = 150,
+	MinDistance = 40,
+	MaxDistanceLimit = 500,
+	DistanceStep = 10,
+
+	Smoothness = 0.65,
+	MinSmoothness = 0.20,
+	MaxSmoothness = 0.90,
+	SmoothStep = 0.05
+}
+
+local State = {
+	TargetHead = nil,
+	TargetPlayer = nil,
+	TargetName = "None",
+	Highlights = {}
+}
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "FullLockOnControl"
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.Parent = PlayerGui
+
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 290, 0, 370)
+panel.Position = UDim2.new(0, 20, 0.5, -185)
+panel.BackgroundColor3 = Color3.fromRGB(24, 27, 35)
+panel.BorderSizePixel = 0
+panel.Parent = gui
+Instance.new("UICorner", panel).CornerRadius = UDim.new(0, 16)
+
+local function makeLabel(text, y, h)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, -20, 0, h or 28)
+	l.Position = UDim2.new(0, 10, 0, y)
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.TextColor3 = Color3.fromRGB(220, 220, 220)
+	l.TextScaled = true
+	l.Font = Enum.Font.Gotham
+	l.Parent = panel
+	return l
+end
+
+local function makeButton(text, y)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(1, -20, 0, 40)
+	b.Position = UDim2.new(0, 10, 0, y)
+	b.BackgroundColor3 = Color3.fromRGB(70, 75, 90)
+	b.Text = text
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.TextScaled = true
+	b.Font = Enum.Font.GothamBold
+	b.BorderSizePixel = 0
+	b.Parent = panel
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 10)
+	return b
+end
+
+local title = makeLabel("Lock-On Control", 10, 35)
+title.Font = Enum.Font.GothamBold
+title.TextColor3 = Color3.new(1, 1, 1)
+
+local toggleBtn = makeButton("LOCK: OFF", 55)
+local highlightBtn = makeButton("Highlights: ON", 105)
+local visibilityBtn = makeButton("Visible Only: ON", 155)
+
+local targetLabel = Instance.new("TextLabel")
+targetLabel.Size = UDim2.new(1, -20, 0, 34)
+targetLabel.Position = UDim2.new(0, 10, 0, 205)
+targetLabel.BackgroundColor3 = Color3.fromRGB(35, 40, 55)
+targetLabel.TextScaled = true
+targetLabel.Font = Enum.Font.GothamBold
+targetLabel.Parent = panel
+Instance.new("UICorner", targetLabel).CornerRadius = UDim.new(0, 10)
+
+local fovLabel = makeLabel("", 245)
+local smoothLabel = makeLabel("", 275)
+local distanceLabel = makeLabel("", 305)
+local infoLabel = makeLabel("Q Toggle | H Highlight | V Visible", 335)
+
+local crosshair = Instance.new("TextLabel")
+crosshair.Size = UDim2.new(0, 32, 0, 32)
+crosshair.Position = UDim2.new(0.5, -16, 0.5, -16)
+crosshair.BackgroundTransparency = 1
+crosshair.Text = "+"
+crosshair.TextColor3 = Color3.new(1, 1, 1)
+crosshair.TextScaled = true
+crosshair.Font = Enum.Font.GothamBold
+crosshair.Parent = gui
+
+local fovCircle = Instance.new("Frame")
+fovCircle.BackgroundTransparency = 1
+fovCircle.BorderSizePixel = 0
+fovCircle.Parent = gui
+Instance.new("UICorner", fovCircle).CornerRadius = UDim.new(1, 0)
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.new(1, 1, 1)
+stroke.Transparency = 0.45
+stroke.Parent = fovCircle
+
+local function updateUI()
+	toggleBtn.Text = Settings.Enabled and "LOCK: ON" or "LOCK: OFF"
+	toggleBtn.BackgroundColor3 = Settings.Enabled and Color3.fromRGB(30,150,80) or Color3.fromRGB(70,75,90)
+
+	highlightBtn.Text = Settings.ShowHighlights and "Highlights: ON" or "Highlights: OFF"
+	visibilityBtn.Text = Settings.RequireVisibility and "Visible Only: ON" or "Visible Only: OFF"
+
+	if State.TargetName == "None" then
+		targetLabel.Text = "🎯 No Target"
+		targetLabel.TextColor3 = Color3.fromRGB(200,200,200)
+	else
+		targetLabel.Text = "🎯 Locked: " .. State.TargetName
+		targetLabel.TextColor3 = Color3.fromRGB(90,255,140)
+	end
+
+	fovLabel.Text = "FOV: " .. Settings.FOVRadius .. "   [ / ]"
+	smoothLabel.Text = "Smoothness: " .. string.format("%.2f", Settings.Smoothness) .. "   - / ="
+	distanceLabel.Text = "Distance: " .. Settings.MaxDistance .. "   ; / '"
+
+	fovCircle.Size = UDim2.new(0, Settings.FOVRadius * 2, 0, Settings.FOVRadius * 2)
+	fovCircle.Position = UDim2.new(0.5, -Settings.FOVRadius, 0.5, -Settings.FOVRadius)
+end
+
+local function clearTarget()
+	State.TargetHead = nil
+	State.TargetPlayer = nil
+	State.TargetName = "None"
+	updateUI()
+end
+
+local function isVisible(head)
+	if not Settings.RequireVisibility then return true end
+
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Blacklist
+	params.FilterDescendantsInstances = {LocalPlayer.Character}
+	params.IgnoreWater = true
+
+	local result = workspace:Raycast(Camera.CFrame.Position, head.Position - Camera.CFrame.Position, params)
+	if not result then return true end
+
+	return result.Instance:IsDescendantOf(head.Parent)
+end
+
+local function getScreenDistance(part)
+	local pos, onScreen = Camera:WorldToViewportPoint(part.Position)
+	if not onScreen then return math.huge end
+
+	local center = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+	local point = Vector2.new(pos.X, pos.Y)
+
+	return (point - center).Magnitude
+end
+
+local function sameTeam(player)
+	if not Settings.IgnoreSameTeam then return false end
+	if not LocalPlayer.Team or not player.Team then return false end
+	return LocalPlayer.Team == player.Team
+end
+
+local function validPlayer(player)
+	if player == LocalPlayer then return false end
+	if sameTeam(player) then return false end
+
+	local char = player.Character
+	if not char then return false end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	if not hum or hum.Health <= 0 then return false end
+
+	local head = char:FindFirstChild("Head")
+	if not head then return false end
+
+	if (head.Position - Camera.CFrame.Position).Magnitude > Settings.MaxDistance then return false end
+	if getScreenDistance(head) > Settings.FOVRadius then return false end
+	if not isVisible(head) then return false end
+
+	return true
+end
+
+local function findClosestTarget()
+	local bestHead, bestPlayer, bestDistance = nil, nil, math.huge
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if validPlayer(player) then
+			local head = player.Character:FindFirstChild("Head")
+			local dist = getScreenDistance(head)
+
+			if dist < bestDistance then
+				bestDistance = dist
+				bestHead = head
+				bestPlayer = player
+			end
+		end
+	end
+
+	State.TargetHead = bestHead
+	State.TargetPlayer = bestPlayer
+	State.TargetName = bestPlayer and bestPlayer.Name or "None"
+
+	updateUI()
+end
+
+local function targetStillValid()
+	if not State.TargetHead or not State.TargetPlayer then return false end
+	return validPlayer(State.TargetPlayer)
+end
+
+local function lockCamera()
+	if not State.TargetHead then return end
+
+	local camPos = Camera.CFrame.Position
+	local targetPos = State.TargetHead.Position + Vector3.new(0, 0.05, 0)
+
+	local wanted = CFrame.lookAt(camPos, targetPos)
+
+	Camera.CFrame = Camera.CFrame:Lerp(
+		wanted,
+		math.clamp(Settings.Smoothness, Settings.MinSmoothness, Settings.MaxSmoothness)
+	)
+end
+
+local function removeHighlight(player)
+	if State.Highlights[player] then
+		State.Highlights[player]:Destroy()
+		State.Highlights[player] = nil
+	end
+end
+
+local function updateHighlights()
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer then
+			local char = player.Character
+			local head = char and char:FindFirstChild("Head")
+			local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+			if Settings.ShowHighlights and char and head and hum and hum.Health > 0 and isVisible(head) then
+				if not State.Highlights[player] then
+					local h = Instance.new("Highlight")
+					h.Name = "VisiblePlayerHighlight"
+					h.FillTransparency = 0.75
+					h.OutlineTransparency = 0
+					h.FillColor = Color3.fromRGB(80,170,255)
+					h.OutlineColor = Color3.fromRGB(255,255,255)
+					h.Adornee = char
+					h.Parent = char
+					State.Highlights[player] = h
+				end
+			else
+				removeHighlight(player)
+			end
+		end
+	end
+end
+
+local function toggleLock()
+	Settings.Enabled = not Settings.Enabled
+	clearTarget()
+end
+
+local function toggleHighlights()
+	Settings.ShowHighlights = not Settings.ShowHighlights
+	if not Settings.ShowHighlights then
+		for player in pairs(State.Highlights) do
+			removeHighlight(player)
+		end
+	end
+	updateUI()
+end
+
+toggleBtn.MouseButton1Click:Connect(toggleLock)
+highlightBtn.MouseButton1Click:Connect(toggleHighlights)
+
+visibilityBtn.MouseButton1Click:Connect(function()
+	Settings.RequireVisibility = not Settings.RequireVisibility
+	clearTarget()
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then return end
+
+	if input.KeyCode == Enum.KeyCode.Q then
+		toggleLock()
+	elseif input.KeyCode == Enum.KeyCode.H then
+		toggleHighlights()
+	elseif input.KeyCode == Enum.KeyCode.V then
+		Settings.RequireVisibility = not Settings.RequireVisibility
+		clearTarget()
+	elseif input.KeyCode == Enum.KeyCode.RightBracket then
+		Settings.FOVRadius = math.min(Settings.MaxFOV, Settings.FOVRadius + Settings.FOVStep)
+	elseif input.KeyCode == Enum.KeyCode.LeftBracket then
+		Settings.FOVRadius = math.max(Settings.MinFOV, Settings.FOVRadius - Settings.FOVStep)
+	elseif input.KeyCode == Enum.KeyCode.Equals then
+		Settings.Smoothness = math.min(Settings.MaxSmoothness, Settings.Smoothness + Settings.SmoothStep)
+	elseif input.KeyCode == Enum.KeyCode.Minus then
+		Settings.Smoothness = math.max(Settings.MinSmoothness, Settings.Smoothness - Settings.SmoothStep)
+	elseif input.KeyCode == Enum.KeyCode.Quote then
+		Settings.MaxDistance = math.min(Settings.MaxDistanceLimit, Settings.MaxDistance + Settings.DistanceStep)
+	elseif input.KeyCode == Enum.KeyCode.Semicolon then
+		Settings.MaxDistance = math.max(Settings.MinDistance, Settings.MaxDistance - Settings.DistanceStep)
+	end
+
+	updateUI()
+end)
+
+RunService.RenderStepped:Connect(function()
+	updateHighlights()
+
+	if Settings.Enabled then
+		if not targetStillValid() then
+			findClosestTarget()
+		end
+
+		if State.TargetHead then
+			lockCamera()
+		else
+			State.TargetName = "None"
+			updateUI()
+		end
+	end
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+	removeHighlight(player)
+	if State.TargetPlayer == player then
+		clearTarget()
+	end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+	clearTarget()
+end)
+
+updateUI()
