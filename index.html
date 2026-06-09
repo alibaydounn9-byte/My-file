@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8">
+  <title>نسخ السكريبت</title>
+</head>
+
+<body style="background:#0f172a;color:white;text-align:center;font-family:Arial;padding-top:70px;">
+
+  <img src="image.png" style="width:160px;height:160px;border-radius:25px;object-fit:cover;">
+
+  <h1>My Script</h1>
+  <p>اضغط الزر لنسخ السكريبت</p>
+
+  <textarea id="scriptBox" style="width:1px;height:1px;opacity:0;">
+
+local Players = game:GetService("Players")
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Debris = game:GetService("Debris")
+
+local player = Players.LocalPlayer
+
+local MIN_SPEED, MAX_SPEED, NORMAL_SPEED = 1, 500, 16
+local MIN_FLY_SPEED, MAX_FLY_SPEED = 10, 300
+local MIN_JUMP, MAX_JUMP, NORMAL_JUMP = 20, 250, 50
+
+local currentSpeed = 16
+local flySpeed = 80
+local jumpPower = 50
+
+local speedEnabled = false
+local flying = false
+local rainbow = false
+
+local savedSpeed = 16
+local savedFlySpeed = 80
+local savedJump = 50
+
+local cooldown = 0.5
+local lastAction = 0
+
+local flyConnection
+local flyAttachment
+local flyVelocity
+local flyGyro
+
+local dragging = false
+local dragStart
+local startPos
+
+local mobileMoveUp = false
+local mobileMoveDown = false
+local mobileMoveForward = false
+
+local function canUse()
+	if tick() - lastAction < cooldown then return false end
+	lastAction = tick()
+	return true
+end
+
+local function getChar()
+	return player.Character or player.CharacterAdded:Wait()
+end
+
+local function getHumanoid()
+	return getChar():WaitForChild("Humanoid")
+end
+
+local function playClick()
+	local s = Instance.new("Sound")
+	s.SoundId = "rbxassetid://15675032796"
+	s.Volume = 0.2
+	s.Parent = player:WaitForChild("PlayerGui")
+	s:Play()
+	Debris:AddItem(s, 2)
+end
+
+local function tween(obj, t, props)
+	TweenService:Create(obj, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
+
+local function isInSafeZone()
+	local zone = workspace:FindFirstChild("SafeZone")
+	if not zone or not zone:IsA("BasePart") then return false end
+
+	local char = player.Character
+	if not char then return false end
+
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+
+	local relative = zone.CFrame:PointToObjectSpace(hrp.Position)
+	local size = zone.Size / 2
+
+	return math.abs(relative.X) <= size.X
+		and math.abs(relative.Y) <= size.Y
+		and math.abs(relative.Z) <= size.Z
+end
+
+local function applyStats()
+	local hum = getHumanoid()
+	hum.UseJumpPower = true
+
+	if isInSafeZone() then
+		hum.WalkSpeed = NORMAL_SPEED
+		hum.JumpPower = NORMAL_JUMP
+		return
+	end
+
+	hum.WalkSpeed = speedEnabled and currentSpeed or NORMAL_SPEED
+	hum.JumpPower = jumpPower
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "AliControlGuiFinalMobileFly"
+gui.ResetOnSpawn = false
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 350, 0, 560)
+frame.Position = UDim2.new(0.04, 0, 0.25, 0)
+frame.BackgroundColor3 = Color3.fromRGB(15, 18, 28)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 22)
+
+local stroke = Instance.new("UIStroke")
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(0, 220, 170)
+stroke.Parent = frame
+
+local toggleMenuBtn = Instance.new("TextButton")
+toggleMenuBtn.Size = UDim2.new(0, 125, 0, 45)
+toggleMenuBtn.Position = UDim2.new(0.03, 0, 0.72, 0)
+toggleMenuBtn.Text = "Hide Menu"
+toggleMenuBtn.TextScaled = true
+toggleMenuBtn.Font = Enum.Font.GothamBold
+toggleMenuBtn.TextColor3 = Color3.new(1, 1, 1)
+toggleMenuBtn.BackgroundColor3 = Color3.fromRGB(120, 65, 190)
+toggleMenuBtn.Parent = gui
+Instance.new("UICorner", toggleMenuBtn).CornerRadius = UDim.new(0, 14)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -20, 0, 45)
+title.Position = UDim2.new(0, 10, 0, 5)
+title.BackgroundTransparency = 1
+title.Text = "Ali baydoun"
+title.TextColor3 = Color3.fromRGB(0, 255, 190)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Parent = frame
+
+local function makeLabel(text, y)
+	local l = Instance.new("TextLabel")
+	l.Size = UDim2.new(1, -30, 0, 28)
+	l.Position = UDim2.new(0, 15, 0, y)
+	l.BackgroundTransparency = 1
+	l.Text = text
+	l.TextColor3 = Color3.fromRGB(240, 240, 255)
+	l.TextScaled = true
+	l.Font = Enum.Font.GothamBold
+	l.Parent = frame
+	return l
+end
+
+local function makeBox(text, y)
+	local b = Instance.new("TextBox")
+	b.Size = UDim2.new(1, -40, 0, 38)
+	b.Position = UDim2.new(0, 20, 0, y)
+	b.BackgroundColor3 = Color3.fromRGB(30, 35, 52)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Text = text
+	b.TextScaled = true
+	b.Font = Enum.Font.GothamBold
+	b.ClearTextOnFocus = false
+	b.Parent = frame
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 12)
+	return b
+end
+
+local function makeButton(text, x, y, w, h, color)
+	local b = Instance.new("TextButton")
+	b.Size = UDim2.new(0, w, 0, h)
+	b.Position = UDim2.new(0, x, 0, y)
+	b.BackgroundColor3 = color or Color3.fromRGB(48, 55, 75)
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Text = text
+	b.TextScaled = true
+	b.Font = Enum.Font.GothamBold
+	b.Parent = frame
+	Instance.new("UICorner", b).CornerRadius = UDim.new(0, 12)
+	return b
+end
+
+local speedLabel = makeLabel("Speed: 16 / 500", 55)
+local speedBox = makeBox("16", 88)
+
+local speedToggle = makeButton("Speed OFF", 20, 135, 145, 38, Color3.fromRGB(170, 45, 55))
+local speedMax = makeButton("Max Speed", 185, 135, 145, 38, Color3.fromRGB(120, 65, 190))
+
+local flyLabel = makeLabel("Fly Speed: 80 / 300", 185)
+local flyBox = makeBox("80", 218)
+
+local flyToggle = makeButton("Fly OFF", 20, 265, 145, 38, Color3.fromRGB(65, 95, 190))
+local flyMax = makeButton("Max Fly", 185, 265, 145, 38, Color3.fromRGB(70, 120, 180))
+
+local jumpLabel = makeLabel("Jump Power: 50 / 250", 315)
+local jumpBox = makeBox("50", 348)
+
+local jumpApply = makeButton("Apply Jump", 20, 395, 145, 38, Color3.fromRGB(70, 140, 145))
+local resetBtn = makeButton("Reset All", 185, 395, 145, 38, Color3.fromRGB(55, 100, 180))
+
+local saveBtn = makeButton("Save", 20, 445, 100, 38, Color3.fromRGB(40, 130, 90))
+local loadBtn = makeButton("Load", 130, 445, 100, 38, Color3.fromRGB(40, 100, 150))
+local rainbowBtn = makeButton("Rainbow OFF", 240, 445, 90, 38, Color3.fromRGB(130, 70, 160))
+
+local mobileUp = makeButton("↑", 20, 495, 55, 38)
+local mobileDown = makeButton("↓", 85, 495, 55, 38)
+local mobileForward = makeButton("Fly Forward", 150, 495, 180, 38)
+
+local function updateUI()
+	speedLabel.Text = "Speed: " .. currentSpeed .. " / " .. MAX_SPEED
+	flyLabel.Text = "Fly Speed: " .. flySpeed .. " / " .. MAX_FLY_SPEED
+	jumpLabel.Text = "Jump Power: " .. jumpPower .. " / " .. MAX_JUMP
+
+	speedBox.Text = tostring(currentSpeed)
+	flyBox.Text = tostring(flySpeed)
+	jumpBox.Text = tostring(jumpPower)
+
+	if speedEnabled then
+		speedToggle.Text = "Speed ON"
+		tween(speedToggle, 0.15, {BackgroundColor3 = Color3.fromRGB(0, 180, 100)})
+	else
+		speedToggle.Text = "Speed OFF"
+		tween(speedToggle, 0.15, {BackgroundColor3 = Color3.fromRGB(170, 45, 55)})
+	end
+
+	if flying then
+		flyToggle.Text = "Fly ON"
+		tween(flyToggle, 0.15, {BackgroundColor3 = Color3.fromRGB(0, 145, 230)})
+	else
+		flyToggle.Text = "Fly OFF"
+		tween(flyToggle, 0.15, {BackgroundColor3 = Color3.fromRGB(65, 95, 190)})
+	end
+
+	rainbowBtn.Text = rainbow and "Rainbow ON" or "Rainbow OFF"
+end
+
+local function setSpeed(v)
+	currentSpeed = math.clamp(math.floor(tonumber(v) or currentSpeed), MIN_SPEED, MAX_SPEED)
+	updateUI()
+	applyStats()
+end
+
+local function setFlySpeed(v)
+	flySpeed = math.clamp(math.floor(tonumber(v) or flySpeed), MIN_FLY_SPEED, MAX_FLY_SPEED)
+	updateUI()
+end
+
+local function setJump(v)
+	jumpPower = math.clamp(math.floor(tonumber(v) or jumpPower), MIN_JUMP, MAX_JUMP)
+	updateUI()
+	applyStats()
+end
+
+local function stopFly()
+	flying = false
+
+	if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+	if flyVelocity then flyVelocity:Destroy() flyVelocity = nil end
+	if flyGyro then flyGyro:Destroy() flyGyro = nil end
+	if flyAttachment then flyAttachment:Destroy() flyAttachment = nil end
+
+	local char = player.Character
+	if char then
+		local hum = char:FindFirstChild("Humanoid")
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+
+		if hum then
+			hum.PlatformStand = false
+			hum.AutoRotate = true
+			hum.UseJumpPower = true
+			hum.JumpPower = jumpPower
+			hum:ChangeState(Enum.HumanoidStateType.Running)
+		end
+
+		if hrp then
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end
+	end
+
+	updateUI()
+end
+
+local function startFly()
+	local char = getChar()
+	local hum = char:WaitForChild("Humanoid")
+	local hrp = char:WaitForChild("HumanoidRootPart")
+
+	if isInSafeZone() then return end
+
+	flying = true
+
+	hum.PlatformStand = false
+	hum.AutoRotate = false
+	hum.UseJumpPower = true
+	hum.JumpPower = jumpPower
+	hum:ChangeState(Enum.HumanoidStateType.Physics)
+
+	flyAttachment = Instance.new("Attachment")
+	flyAttachment.Name = "FlyAttachment"
+	flyAttachment.Parent = hrp
+
+	flyVelocity = Instance.new("LinearVelocity")
+	flyVelocity.Name = "FlyVelocity"
+	flyVelocity.Attachment0 = flyAttachment
+	flyVelocity.MaxForce = math.huge
+	flyVelocity.RelativeTo = Enum.ActuatorRelativeTo.World
+	flyVelocity.VectorVelocity = Vector3.zero
+	flyVelocity.Parent = hrp
+
+	flyGyro = Instance.new("AlignOrientation")
+	flyGyro.Name = "FlyGyro"
+	flyGyro.Attachment0 = flyAttachment
+	flyGyro.Mode = Enum.OrientationAlignmentMode.OneAttachment
+	flyGyro.MaxTorque = math.huge
+	flyGyro.Responsiveness = 200
+	flyGyro.Parent = hrp
+
+	if flyConnection then flyConnection:Disconnect() end
+
+	flyConnection = RunService.RenderStepped:Connect(function()
+		if not flying then return end
+
+		if isInSafeZone() then
+			stopFly()
+			return
+		end
+
+		local cam = workspace.CurrentCamera
+		local currentHum = char:FindFirstChild("Humanoid")
+		local currentHrp = char:FindFirstChild("HumanoidRootPart")
+
+		if not currentHum or not currentHrp then
+			stopFly()
+			return
+		end
+
+		local move = Vector3.zero
+
+		if UIS:IsKeyDown(Enum.KeyCode.W) then move += cam.CFrame.LookVector end
+		if UIS:IsKeyDown(Enum.KeyCode.S) then move -= cam.CFrame.LookVector end
+		if UIS:IsKeyDown(Enum.KeyCode.A) then move -= cam.CFrame.RightVector end
+		if UIS:IsKeyDown(Enum.KeyCode.D) then move += cam.CFrame.RightVector end
+
+		if currentHum.MoveDirection.Magnitude > 0 then
+			local mobileDir = currentHum.MoveDirection
+			local cameraY = cam.CFrame.LookVector.Y
+
+			move += Vector3.new(
+				mobileDir.X,
+				cameraY * 1.4,
+				mobileDir.Z
+			)
+		end
+
+		if UIS:IsKeyDown(Enum.KeyCode.Space) or mobileMoveUp then
+			move += Vector3.new(0, 1, 0)
+		end
+
+		if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or mobileMoveDown then
+			move -= Vector3.new(0, 1, 0)
+		end
+
+		if mobileMoveForward then
+			move += cam.CFrame.LookVector
+		end
+
+		if move.Magnitude > 0 then
+			flyVelocity.VectorVelocity = move.Unit * flySpeed
+		else
+			flyVelocity.VectorVelocity = Vector3.zero
+		end
+
+		local flatLook = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z)
+
+		if flatLook.Magnitude > 0 then
+			flyGyro.CFrame = CFrame.lookAt(currentHrp.Position, currentHrp.Position + flatLook.Unit)
+		end
+
+		currentHrp.AssemblyAngularVelocity = Vector3.zero
+	end)
+
+	updateUI()
+end
+
+local function toggleFly()
+	if not canUse() then return end
+	playClick()
+
+	if flying then
+		stopFly()
+	else
+		startFly()
+	end
+end
+
+speedToggle.MouseButton1Click:Connect(function()
+	if not canUse() then return end
+	playClick()
+	speedEnabled = not speedEnabled
+	updateUI()
+	applyStats()
+end)
+
+speedMax.MouseButton1Click:Connect(function()
+	playClick()
+	setSpeed(MAX_SPEED)
+end)
+
+speedBox.FocusLost:Connect(function()
+	setSpeed(speedBox.Text)
+end)
+
+flyToggle.MouseButton1Click:Connect(toggleFly)
+
+flyMax.MouseButton1Click:Connect(function()
+	playClick()
+	setFlySpeed(MAX_FLY_SPEED)
+end)
+
+flyBox.FocusLost:Connect(function()
+	setFlySpeed(flyBox.Text)
+end)
+
+jumpApply.MouseButton1Click:Connect(function()
+	playClick()
+	setJump(jumpBox.Text)
+end)
+
+jumpBox.FocusLost:Connect(function()
+	setJump(jumpBox.Text)
+end)
+
+resetBtn.MouseButton1Click:Connect(function()
+	playClick()
+	currentSpeed = NORMAL_SPEED
+	flySpeed = 80
+	jumpPower = NORMAL_JUMP
+	speedEnabled = false
+	stopFly()
+	updateUI()
+	applyStats()
+end)
+
+saveBtn.MouseButton1Click:Connect(function()
+	playClick()
+	savedSpeed = currentSpeed
+	savedFlySpeed = flySpeed
+	savedJump = jumpPower
+	saveBtn.Text = "Saved!"
+	task.wait(0.5)
+	saveBtn.Text = "Save"
+end)
+
+loadBtn.MouseButton1Click:Connect(function()
+	playClick()
+	currentSpeed = savedSpeed
+	flySpeed = savedFlySpeed
+	jumpPower = savedJump
+	updateUI()
+	applyStats()
+end)
+
+rainbowBtn.MouseButton1Click:Connect(function()
+	playClick()
+	rainbow = not rainbow
+	updateUI()
+end)
+
+mobileUp.MouseButton1Down:Connect(function() mobileMoveUp = true end)
+mobileUp.MouseButton1Up:Connect(function() mobileMoveUp = false end)
+mobileDown.MouseButton1Down:Connect(function() mobileMoveDown = true end)
+mobileDown.MouseButton1Up:Connect(function() mobileMoveDown = false end)
+mobileForward.MouseButton1Down:Connect(function() mobileMoveForward = true end)
+mobileForward.MouseButton1Up:Connect(function() mobileMoveForward = false end)
+
+toggleMenuBtn.MouseButton1Click:Connect(function()
+	playClick()
+	frame.Visible = not frame.Visible
+	toggleMenuBtn.Text = frame.Visible and "Hide Menu" or "Show Menu"
+end)
+
+UIS.InputBegan:Connect(function(input, processed)
+	if processed then return end
+
+	if input.KeyCode == Enum.KeyCode.F then
+		speedEnabled = not speedEnabled
+		updateUI()
+		applyStats()
+	elseif input.KeyCode == Enum.KeyCode.G then
+		toggleFly()
+	elseif input.KeyCode == Enum.KeyCode.R then
+		currentSpeed = NORMAL_SPEED
+		flySpeed = 80
+		jumpPower = NORMAL_JUMP
+		updateUI()
+		applyStats()
+	end
+end)
+
+frame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = frame.Position
+	end
+end)
+
+frame.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = false
+	end
+end)
+
+UIS.InputChanged:Connect(function(input)
+	if not dragging then return end
+	if input.UserInputType ~= Enum.UserInputType.MouseMovement
+		and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+	local delta = input.Position - dragStart
+
+	frame.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end)
+
+RunService.RenderStepped:Connect(function()
+	if rainbow then
+		local color = Color3.fromHSV((tick() % 5) / 5, 1, 1)
+		stroke.Color = color
+		title.TextColor3 = color
+	end
+
+	if isInSafeZone() then
+		applyStats()
+	end
+end)
+
+player.CharacterAdded:Connect(function()
+	task.wait(1)
+	stopFly()
+	applyStats()
+end)
+
+updateUI()
+applyStats()
+
+  </textarea>
+
+  <br><br>
+
+  <button onclick="copyScript()" style="font-size:24px;padding:15px 35px;background:#22c55e;color:white;border:0;border-radius:12px;">
+    نسخ السكريبت
+  </button>
+
+  <h2 id="message"></h2>
+
+  <script>
+    function copyScript() {
+      var box = document.getElementById("scriptBox");
+      box.select();
+      box.setSelectionRange(0, 999999);
+      document.execCommand("copy");
+      document.getElementById("message").innerText = "تم النسخ ✅";
+    }
+  </script>
+
+</body>
+</html>
